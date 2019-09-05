@@ -1,0 +1,7 @@
+[package]
+name = "golay_code"
+version = "0.1.0"
+authors = ["HamaguRe<space-denpa.jp>"]
+edition = "2018"
+
+[dependencies]
