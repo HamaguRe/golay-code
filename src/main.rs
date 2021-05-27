@@ -53,12 +53,12 @@ fn main() {
     println!("encoded: {:<024b}", encoded);
 
     // 意図的にビット反転させたデータ
-    let error = 0b0100_0100_0001_0100_0001_0000;  // エラービット
-    println!("error: {:<024b}", error);
+    let error: u32 = 0b0100_0100_0001_0000_0000_0000;  // エラービット
+    println!("error: {:<024b}, bits: {}", error, error.count_ones());
     let rx = encoded ^ error;  // errorでビット反転させる．
     println!("rx: {:<024b}", rx);
     let (flag, corrected) = ecc(rx);
-    println!("corrected: {:<024b}, flat: {:?}", corrected, flag);
+    println!("corrected: {:<024b}, flag: {:?}", corrected, flag);
 
     // 符号語から元のデータを取り出す
     println!("tx (recover): {:<012b}", decode(corrected));
@@ -79,9 +79,9 @@ fn main() {
                     println!("corrected: {:<024b}", corrected);
 
                     // 符号語から元のデータを取り出す
-                    println!("tx (recover): {:<012b}", decode(corrected));
+                    println!("tx (recover): {:<012b}, flag: {:?}", decode(corrected), flag);
                     println!("{:?}", tx == decode(corrected));
-                    if flag {
+                    if error.count_ones() < 4 {
                         assert_eq!(tx, decode(corrected));
                     }
                 }
@@ -111,8 +111,9 @@ fn encode(a: u16) -> u32 {
 /// r: 受信語（エラーによるビット反転の可能性あり）
 /// 
 /// return: (flag, code)
+/// 
 /// flag: 誤りを訂正できたらtrue，4bit誤りを検出したらfalseを返す．
-/// 5bit以上のエラーではtrueを返すが，正しく訂正できているわけではない．
+/// 5bit以上のエラーではtrueを返す場合もあるが，正しく訂正できているわけではない．
 /// 
 /// code: 誤り訂正した符号語．4bit誤りの場合は受信語をそのまま返す．
 fn ecc(r: u32) -> (bool, u32) {
@@ -134,8 +135,8 @@ fn ecc(r: u32) -> (bool, u32) {
     if weight(s) <= 3 {
         return ( true, r ^ (s as u32) );
     } else {
-        for i in 0..12 {
-            let tmp = s ^ H_T[i];
+        for (i, h_t_val) in H_T.iter().take(12).enumerate() {
+            let tmp = s ^ *h_t_val;
             if weight(tmp) <= 2 {
                 let e = (0x800000 >> i) | (tmp as u32);
                 //let e = G[i] ^ s as u32;  // こう書いても同じ
@@ -154,8 +155,8 @@ fn ecc(r: u32) -> (bool, u32) {
     if weight(sh) <= 3 {
         return ( true, r ^ ((sh as u32) << 12) );
     } else {
-        for i in 0..12 {
-            let tmp = sh ^ H_T[i];
+        for (i, h_t_val) in H_T.iter().take(12).enumerate() {
+            let tmp = sh ^ *h_t_val;
             if weight(tmp) <= 2 {
                 let e = ((tmp as u32) << 12) | (0x800 >> i);
                 return (true, r ^ e);
@@ -173,14 +174,16 @@ fn decode(a: u32) -> u16 {
     ((a >> 12) & 0xFFF) as u16
 }
 
-/// シンドロームの重みを計算する．
+/// シンドロームの重みを計算する（1になっているビットを数える）．
 /// 
 /// s: シンドローム（右詰め12bit）
-fn weight(s: u16) -> u8 {
-    // 立っているビットの数を数える．
-    let mut w: u16 = 0;
+fn weight(s: u16) -> u32 {
+    /*
+    let mut w = 0;
     for i in 0..12 {
         w += (s >> i) & 1;
     }
-    w as u8
+    w // u16のまま返せば良い
+    */
+    s.count_ones()
 }
