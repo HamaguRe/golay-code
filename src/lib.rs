@@ -1,6 +1,6 @@
-// 拡張２元ゴレイ符号(Golay Code)を実装
-//
-// 3bitまでのエラー訂正と4bitまでの誤り検出が可能．
+//! 拡張２元ゴレイ符号を実装
+//!
+//! 3bitまでのエラー訂正と4bitまでの誤り検出が可能．
 
 /// 検査行列の転置
 const H_T: [u16; 24] = [
@@ -46,57 +46,14 @@ const G: [u32; 12] = [
     0b000000000001_101010101011,
 ];
 
-fn main() {
-    let tx = 0b000110001101;
-    println!("tx: {:<012b}", tx);
-    let encoded = encode(tx);
-    println!("encoded: {:<024b}", encoded);
-
-    // 意図的にビット反転させたデータ
-    let error: u32 = 0b0100_0100_0001_0000_0000_0000;  // エラービット
-    println!("error: {:<024b}, bits: {}", error, error.count_ones());
-    let rx = encoded ^ error;  // errorでビット反転させる．
-    println!("rx: {:<024b}", rx);
-    let (flag, corrected) = ecc(rx);
-    println!("corrected: {:<024b}, flag: {:?}", corrected, flag);
-
-    // 符号語から元のデータを取り出す
-    println!("tx (recover): {:<012b}", decode(corrected));
-    println!("{:?}", tx == decode(corrected));
-
-    // 全パターンチェック
-    /*
-    for i in 0..24 {
-        for j in 0..24 {
-            for k in 0..24 {
-                for l in 0..24 {                
-                    // 意図的にビット反転させたデータ
-                    let error = (1 << i) | (1 << j) | (1 << k) | (1 << l);  // エラービット
-                    println!("error: {:<024b}", error);
-                    let rx = encoded ^ error;  // errorでビット反転させる．
-                    println!("rx: {:<024b}", rx);
-                    let (flag, corrected) = ecc(rx);
-                    println!("corrected: {:<024b}", corrected);
-
-                    // 符号語から元のデータを取り出す
-                    println!("tx (recover): {:<012b}, flag: {:?}", decode(corrected), flag);
-                    println!("{:?}", tx == decode(corrected));
-                    if error.count_ones() < 4 {
-                        assert_eq!(tx, decode(corrected));
-                    }
-                }
-            }
-        }
-    }
-    */
-}
-
-/// 12bitのデータを24bitの符合語に変換
+/// 12bitのデータを24bitの符合語に変換する．
 /// 
 /// データは下位12bitに入れておく．
 /// 上位4bitは見ないので何でも良い．
-fn encode(a: u16) -> u32 {
-    let mut c = 0;  // 符号語(code)
+/// 
+/// 変換後の符号語は下位24bitに入っている．
+pub fn encode(a: u16) -> u32 {
+    let mut c = 0;  // 符号語（code）
     // aベクトルとG行列の積（加算はXOR）
     for (i, g_val) in G.iter().enumerate() {
         let tmp = 0x800 >> i;
@@ -106,17 +63,14 @@ fn encode(a: u16) -> u32 {
     c
 }
 
-/// 受信後のエラー訂正を行う．
+/// 受信語のエラー訂正を行う．
 /// 
-/// r: 受信語（エラーによるビット反転の可能性あり）
-/// 
-/// return: (flag, code)
-/// 
-/// flag: 誤りを訂正できたらtrue，4bit誤りを検出したらfalseを返す．
-/// 5bit以上のエラーではtrueを返す場合もあるが，正しく訂正できているわけではない．
-/// 
-/// code: 誤り訂正した符号語．4bit誤りの場合は受信語をそのまま返す．
-fn ecc(r: u32) -> (bool, u32) {
+/// * `r`: 受信語（下位24bit）
+/// * `return`: (flag, code)
+///     * `flag`: 誤りを訂正できたらtrue，4bit誤りを検出したらfalseを返す．
+///       5bit以上のエラーではtrueを返す場合もあるが，正しく訂正できているわけではない．
+///     * `code`: 誤り訂正した符号語．4bit誤りの場合は受信語をそのまま返す．
+pub fn ecc(r: u32) -> (bool, u32) {
     // 1つめのシンドローム
     let mut s = 0;
     // rベクトルとH_T行列の積（加算はXOR）
@@ -127,7 +81,7 @@ fn ecc(r: u32) -> (bool, u32) {
     }
 
     // シンドロームが0なら誤りなし（もしくは検出できない）．
-    // weightの処理が少し重いのでここで返してしまう．
+    // weightの計算が少し重いのでここで返してしまう．
     if s == 0 {
         return (true, r);
     }
@@ -164,19 +118,20 @@ fn ecc(r: u32) -> (bool, u32) {
         }
     }
 
-    // 4bit以上反転していてもエラーが全て右12bitに集中していればデータ部は
-    // 問題なく復号できてしまうので，とりあえず受信語をそのまま変えす．
+    // 4bit以上反転していてもエラーが全て下位12bitに集中していればデータ部は
+    // 問題なく復号できてしまうので，とりあえず受信語をそのまま返す．
     (false, r)
 }
 
-/// 符合語からデータを取り出す
-fn decode(a: u32) -> u16 {
+/// 符合語からデータを取り出す．
+/// 
+/// 返り値のデータは下位12bitに入っている．
+/// 上位4bitは必ず0．
+pub fn decode(a: u32) -> u16 {
     ((a >> 12) & 0xFFF) as u16
 }
 
 /// シンドロームの重みを計算する（1になっているビットを数える）．
-/// 
-/// s: シンドローム（右詰め12bit）
 fn weight(s: u16) -> u32 {
     /*
     let mut w = 0;
@@ -186,4 +141,37 @@ fn weight(s: u16) -> u32 {
     w // u16のまま返せば良い
     */
     s.count_ones()
+}
+
+#[test]
+fn test() {
+    let tx = 0b100110001101;  // 任意のデータ（12bit）
+    let encoded = encode(tx);
+
+    // 全パターンチェック
+    for i in 0..24 {
+        for j in 0..24 {
+            for k in 0..24 {
+                for l in 0..24 {                
+                    // エラービット
+                    let error = (1 << i) | (1 << j) | (1 << k) | (1 << l);
+
+                    // errorでビット反転させる．
+                    let rx = encoded ^ error;
+
+                    // エラー検出&訂正
+                    let (flag, corrected) = ecc(rx);
+
+                    // エラービットが4bit未満なら全て訂正可能
+                    let error_bits = error.count_ones();
+                    if error_bits < 4 {
+                        assert_eq!(flag, true);
+                        assert_eq!(tx, decode(corrected));
+                    } else if error_bits == 4 {
+                        assert_eq!(flag, false);
+                    }
+                }
+            }
+        }
+    }
 }
