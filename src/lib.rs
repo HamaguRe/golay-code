@@ -52,6 +52,7 @@ const G: [u32; 12] = [
 /// 上位4bitは見ないので何でも良い．
 /// 
 /// 変換後の符号語は下位24bitに入っている．
+#[inline]
 pub fn encode(a: u16) -> u32 {
     let mut c = 0;  // 符号語（code）
     // aベクトルとG行列の積（加算はXOR）
@@ -70,6 +71,7 @@ pub fn encode(a: u16) -> u32 {
 ///     * `flag`: 誤りを訂正できたらtrue，4bit誤りを検出したらfalseを返す．
 ///       5bit以上のエラーではtrueを返す場合もあるが，正しく訂正できているわけではない．
 ///     * `code`: 誤り訂正した符号語．4bit誤りの場合は受信語をそのまま返す．
+#[inline]
 pub fn ecc(r: u32) -> (bool, u32) {
     // 1つめのシンドローム
     let mut s = 0;
@@ -127,11 +129,13 @@ pub fn ecc(r: u32) -> (bool, u32) {
 /// 
 /// 返り値のデータは下位12bitに入っている．
 /// 上位4bitは必ず0．
+#[inline]
 pub fn decode(a: u32) -> u16 {
     ((a >> 12) & 0xFFF) as u16
 }
 
 /// シンドロームの重みを計算する（1になっているビットを数える）．
+#[inline]
 fn weight(s: u16) -> u32 {
     /*
     let mut w = 0;
