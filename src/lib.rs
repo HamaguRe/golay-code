@@ -139,13 +139,6 @@ pub fn decode(a: u32) -> u16 {
 /// シンドロームの重みを計算する（1になっているビットを数える）．
 #[inline]
 fn weight(s: u32) -> u32 {
-    /*
-    let mut w = 0;
-    for i in 0..12 {
-        w += (s >> i) & 1;
-    }
-    w
-    */
     s.count_ones()
 }
 
