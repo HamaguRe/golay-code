@@ -2,8 +2,8 @@
 //!
 //! 3bitまでのエラー訂正と4bitまでの誤り検出が可能．
 
-/// 検査行列の転置
-const H_T: [u16; 24] = [
+/// 検査行列の転置 (24bit × 12bit)
+const H_T: [u32; 24] = [
     0b100111110001,
     0b010011111010,
     0b001001111101,
@@ -30,7 +30,7 @@ const H_T: [u16; 24] = [
     0b000000000001,
 ];
 
-/// 生成行列
+/// 生成行列 (12bit × 24bit)
 const G: [u32; 12] = [
     0b100000000000_100111110001,
     0b010000000000_010011111010,
@@ -54,17 +54,19 @@ const G: [u32; 12] = [
 /// 変換後の符号語は下位24bitに入っている．
 #[inline]
 pub fn encode(a: u16) -> u32 {
+    let a = a as u32;
     let mut c = 0;  // 符号語（code）
     // aベクトルとG行列の積（加算はXOR）
-    for (i, g_val) in G.iter().enumerate() {
-        let tmp = 0x800 >> i;
-        let a_bit = if a & tmp == tmp {0xFFFFFF} else {0};
-        c ^= a_bit & *g_val;
+    // ビット演算で処理するために通常の行列積を転置したような状態で計算している
+    for (i, g_line) in G.iter().enumerate() {
+        // // 左のビットから順に見ていって，そのビットが1なら24bitすべて1にする
+        let a_bit = ((a >> (11 - i)) & 1) * 0xFFFFFF;
+        c ^= a_bit & *g_line;
     }
     c
 }
 
-/// 受信語のエラー訂正を行う．
+/// 受信語のエラー検出と訂正を行う．
 /// 
 /// * `r`: 受信語（下位24bit）
 /// * `return`: (flag, code)
@@ -74,12 +76,12 @@ pub fn encode(a: u16) -> u32 {
 #[inline]
 pub fn ecc(r: u32) -> (bool, u32) {
     // 1つめのシンドローム
-    let mut s = 0;
+    let mut s: u32 = 0;
     // rベクトルとH_T行列の積（加算はXOR）
-    for (i, h_t_val) in H_T.iter().enumerate() {
-        let tmp = 0x800000 >> i;
-        let e_bit = if r & tmp == tmp {0xFFF} else {0};
-        s ^= e_bit & *h_t_val;
+    for (i, h_t_line) in H_T.iter().enumerate() {
+        // 左のビットから順に見ていって，そのビットが1なら12bitすべて1にする
+        let r_bit = ((r >> (23 - i)) & 1) * 0xFFF;
+        s ^= r_bit & *h_t_line;
     }
 
     // シンドロームが0なら誤りなし（もしくは検出できない）．
@@ -89,13 +91,13 @@ pub fn ecc(r: u32) -> (bool, u32) {
     }
 
     if weight(s) <= 3 {
-        return ( true, r ^ (s as u32) );
+        return ( true, r ^ s );
     } else {
-        for (i, h_t_val) in H_T.iter().take(12).enumerate() {
-            let tmp = s ^ *h_t_val;
+        for (i, h_t_line) in H_T.iter().take(12).enumerate() {
+            let tmp = s ^ *h_t_line;
             if weight(tmp) <= 2 {
-                let e = (0x800000 >> i) | (tmp as u32);
-                //let e = G[i] ^ s as u32;  // こう書いても同じ
+                let e = (0x800000 >> i) | tmp;
+                //let e = G[i] ^ s;  // こう書いても同じ
                 return (true, r ^ e);
             }
         }
@@ -103,18 +105,17 @@ pub fn ecc(r: u32) -> (bool, u32) {
 
     // 2つめのシンドローム
     let mut sh = 0;
-    for (i, h_t_val) in H_T.iter().take(12).enumerate() {
-        let tmp = 0x800 >> i;
-        let s_bit = if s & tmp == tmp {0xFFF} else {0};
-        sh ^= s_bit & *h_t_val;
+    for (i, h_t_line) in H_T.iter().take(12).enumerate() {
+        let s_bit = ((s >> (11 - i)) & 1) * 0xFFF;
+        sh ^= s_bit & *h_t_line;
     }
     if weight(sh) <= 3 {
-        return ( true, r ^ ((sh as u32) << 12) );
+        return ( true, r ^ (sh << 12) );
     } else {
-        for (i, h_t_val) in H_T.iter().take(12).enumerate() {
-            let tmp = sh ^ *h_t_val;
+        for (i, h_t_line) in H_T.iter().take(12).enumerate() {
+            let tmp = sh ^ *h_t_line;
             if weight(tmp) <= 2 {
-                let e = ((tmp as u32) << 12) | (0x800 >> i);
+                let e = (tmp << 12) | (0x800 >> i);
                 return (true, r ^ e);
             }
         }
@@ -131,18 +132,19 @@ pub fn ecc(r: u32) -> (bool, u32) {
 /// 上位4bitは必ず0．
 #[inline]
 pub fn decode(a: u32) -> u16 {
+    // 生成行列からわかるように，元データは上位12bitに入っている．
     ((a >> 12) & 0xFFF) as u16
 }
 
 /// シンドロームの重みを計算する（1になっているビットを数える）．
 #[inline]
-fn weight(s: u16) -> u32 {
+fn weight(s: u32) -> u32 {
     /*
     let mut w = 0;
     for i in 0..12 {
         w += (s >> i) & 1;
     }
-    w // u16のまま返せば良い
+    w
     */
     s.count_ones()
 }
