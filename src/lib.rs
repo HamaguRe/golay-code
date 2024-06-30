@@ -55,26 +55,27 @@ const G: [u32; 12] = [
 #[inline]
 pub fn encode(a: u16) -> u32 {
     let a = a as u32;
-    let mut c = 0;  // 符号語（code）
+    let mut code = 0;  // 符号語
     // aベクトルとG行列の積（加算はXOR）
     // ビット演算で処理するために通常の行列積を転置したような状態で計算している
     for (i, g_line) in G.iter().enumerate() {
         // // 左のビットから順に見ていって，そのビットが1なら24bitすべて1にする
         let a_bit = ((a >> (11 - i)) & 1) * 0xFFFFFF;
-        c ^= a_bit & *g_line;
+        code ^= a_bit & *g_line;
     }
-    c
+    code
 }
 
 /// 受信語のエラー検出と訂正を行う．
 /// 
-/// * `r`: 受信語（下位24bit）
-/// * `return`: (flag, code)
-///     * `flag`: 誤りを訂正できたらtrue，4bit誤りを検出したらfalseを返す．
-///       5bit以上のエラーではtrueを返す場合もあるが，正しく訂正できているわけではない．
-///     * `code`: 誤り訂正した符号語．4bit誤りの場合は受信語をそのまま返す．
+/// * `r`: 受信した符号語（下位24bit）
+/// * return: `Option<u32>`
+///     * `code`: 誤り訂正した受信語．
+///     * 誤りを訂正できたらSome(code)，4bit誤りの場合はNoneを返す．
+///     * 5bit以上のエラーではSome(code)を返す場合もあるが，正しく訂正できているわけではない．
+///     * 4bit以上反転していてもエラービットが全て下位12bitにあれば元データは問題なく復号できる．
 #[inline]
-pub fn ecc(r: u32) -> (bool, u32) {
+pub fn ecc(r: u32) -> Option<u32> {
     // 1つめのシンドローム
     let mut s: u32 = 0;
     // rベクトルとH_T行列の積（加算はXOR）
@@ -87,18 +88,18 @@ pub fn ecc(r: u32) -> (bool, u32) {
     // シンドロームが0なら誤りなし（もしくは検出できない）．
     // weightの計算が少し重いのでここで返してしまう．
     if s == 0 {
-        return (true, r);
+        return Some(r);
     }
 
     if weight(s) <= 3 {
-        return ( true, r ^ s );
+        return Some(r ^ s);
     } else {
         for (i, h_t_line) in H_T.iter().take(12).enumerate() {
             let tmp = s ^ *h_t_line;
             if weight(tmp) <= 2 {
                 let e = (0x800000 >> i) | tmp;
                 //let e = G[i] ^ s;  // こう書いても同じ
-                return (true, r ^ e);
+                return Some(r ^ e);
             }
         }
     }
@@ -110,20 +111,18 @@ pub fn ecc(r: u32) -> (bool, u32) {
         sh ^= s_bit & *h_t_line;
     }
     if weight(sh) <= 3 {
-        return ( true, r ^ (sh << 12) );
+        return Some(r ^ (sh << 12));
     } else {
         for (i, h_t_line) in H_T.iter().take(12).enumerate() {
             let tmp = sh ^ *h_t_line;
             if weight(tmp) <= 2 {
                 let e = (tmp << 12) | (0x800 >> i);
-                return (true, r ^ e);
+                return Some(r ^ e);
             }
         }
     }
 
-    // 4bit以上反転していてもエラーが全て下位12bitに集中していればデータ部は
-    // 問題なく復号できてしまうので，とりあえず受信語をそのまま返す．
-    (false, r)
+    None  // 4bitエラー
 }
 
 /// 符合語からデータを取り出す．
@@ -131,9 +130,9 @@ pub fn ecc(r: u32) -> (bool, u32) {
 /// 返り値のデータは下位12bitに入っている．
 /// 上位4bitは必ず0．
 #[inline]
-pub fn decode(a: u32) -> u16 {
+pub fn decode(code: u32) -> u16 {
     // 生成行列からわかるように，元データは上位12bitに入っている．
-    ((a >> 12) & 0xFFF) as u16
+    ((code >> 12) & 0xFFF) as u16
 }
 
 /// シンドロームの重みを計算する（1になっているビットを数える）．
@@ -159,15 +158,14 @@ fn test() {
                     let rx = encoded ^ error;
 
                     // エラー検出&訂正
-                    let (flag, corrected) = ecc(rx);
-
+                    let corrected = ecc(rx);
+                    
                     // エラービットが4bit未満なら全て訂正可能
                     let error_bits = error.count_ones();
                     if error_bits < 4 {
-                        assert_eq!(flag, true);
-                        assert_eq!(tx, decode(corrected));
+                        assert_eq!(tx, decode(corrected.unwrap()));
                     } else if error_bits == 4 {
-                        assert_eq!(flag, false);
+                        assert_eq!(None, corrected);
                     }
                 }
             }
