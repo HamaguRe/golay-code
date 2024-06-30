@@ -24,8 +24,7 @@ main() {
     let e  = 0b0000_0001_0000_0000_1000_0100;  // 3bitエラー
     let rx = tx ^ e;  // 一部ビット反転させた符号語を受信語とする
 
-    let (flag, rec) = golay_code::ecc(rx);  // 誤り検出 & 訂正
-    assert_eq!(flag, true);
-    assert_eq!(data, golay_code::decode(rec));
+    let corrected = golay_code::ecc(rx);  // 誤り検出 & 訂正
+    assert_eq!( data, golay_code::decode(corrected.unwrap()) );
 }
 ```
