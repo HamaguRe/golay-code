@@ -9,7 +9,7 @@ Cargo.toml
 
 ```toml
 [dependencies]
-goray_code = {git = "https://github.com/HamaguRe/quaternion.git"}
+goray-code = {git = "https://github.com/HamaguRe/golay-code"}
 ```
 
 src/main.rs
