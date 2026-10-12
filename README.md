@@ -1,7 +1,7 @@
 # Golay Code implementation
 
-拡張2元ゴレイ符号の実装．
-12bitの元データに対して，3bitまでの誤り訂正と4bitまでの誤り検出が可能．
+An implementation of the extended binary Golay code (24, 12).
+It encodes 12-bit data into a 24-bit codeword, which can correct up to 3-bit errors and detect 4-bit errors.
 
 ## Example of use
 
@@ -9,22 +9,24 @@ Cargo.toml
 
 ```toml
 [dependencies]
-goray-code = {git = "https://github.com/HamaguRe/golay-code"}
+golay-code = {git = "https://github.com/HamaguRe/golay-code"}
 ```
 
 src/main.rs
 
 ```rust
-use goray_code;
+fn main() {
+    let data: u16 = 0b0010_0111_0011;  // original data (12 bits)
+    let tx: u32 = golay_code::encode(data);  // encode into a 24-bit codeword
 
-main() {
-    let data: u16 = 0b0010_0111_0011;  // 元データ
-    let tx: u32 = golay_code::encode(data);  // 24bitの符合語に変換
+    let e  = 0b0000_0001_0000_0000_1000_0100;  // 3-bit error
+    let rx = tx ^ e;  // received word with some bits flipped
 
-    let e  = 0b0000_0001_0000_0000_1000_0100;  // 3bitエラー
-    let rx = tx ^ e;  // 一部ビット反転させた符号語を受信語とする
+    // error detection & correction (when you need the corrected codeword)
+    let corrected: Option<u32> = golay_code::ecc(rx);
+    assert_eq!(Some(tx), corrected);
 
-    let corrected = golay_code::ecc(rx);  // 誤り検出 & 訂正
-    assert_eq!( data, golay_code::decode(corrected.unwrap()) );
+    // correct errors and extract the 12-bit data
+    assert_eq!(Some(data), golay_code::decode(rx));
 }
 ```

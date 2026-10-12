@@ -48,7 +48,7 @@ const G: [u32; 12] = [
     0b000000000001_101010101011,
 ];
 
-/// 12bitのデータを24bitの符合語に変換する．
+/// 12bitのデータを24bitの符号語に変換する．
 /// 
 /// データは下位12bitに入れておく．
 /// 上位4bitは見ないので何でも良い．
@@ -56,91 +56,87 @@ const G: [u32; 12] = [
 /// 変換後の符号語は下位24bitに入っている．
 #[inline]
 pub fn encode(a: u16) -> u32 {
-    let a = a as u32;
-    let mut code = 0;  // 符号語
-    // aベクトルとG行列の積（加算はXOR）
-    // ビット演算で処理するために通常の行列積を転置したような状態で計算している
-    for (i, g_line) in G.iter().enumerate() {
-        // // 左のビットから順に見ていって，そのビットが1なら24bitすべて1にする
-        let a_bit = ((a >> (11 - i)) & 1) * 0xFFFFFF;
-        code ^= a_bit & *g_line;
-    }
-    code
+    mul_vec_mat(a as u32, &G)
 }
 
 /// 受信語のエラー検出と訂正を行う．
 /// 
-/// * `r`: 受信した符号語（下位24bit）
-/// * return: `Option<u32>`
-///     * `code`: 誤り訂正した受信語．
-///     * 誤りを訂正できたらSome(code)，4bit誤りの場合はNoneを返す．
-///     * 5bit以上のエラーではSome(code)を返す場合もあるが，正しく訂正できているわけではない．
-///     * 4bit以上反転していてもエラービットが全て下位12bitにあれば元データは問題なく復号できる．
+/// 受信語`r`は下位24bitに入れておく．上位8bitは無視する．
+///
+/// 3bitまでの誤りは訂正して，訂正後の符号語を`Some`で返す（上位8bitは0）．
+/// 4bitの誤りを検出した場合は`None`を返す．
+///
+/// 5bit以上の誤りでは`Some`を返す場合もあるが，正しく訂正できているわけではない．
 #[inline]
 pub fn ecc(r: u32) -> Option<u32> {
+    // ゴレイ符号に関係無い部分は消す．
+    let r = r & 0xFFFFFF;
+
     // 1つめのシンドローム
-    let mut s: u32 = 0;
-    // rベクトルとH_T行列の積（加算はXOR）
-    for (i, h_t_line) in H_T.iter().enumerate() {
-        // 左のビットから順に見ていって，そのビットが1なら12bitすべて1にする
-        let r_bit = ((r >> (23 - i)) & 1) * 0xFFF;
-        s ^= r_bit & *h_t_line;
-    }
-
-    // シンドロームが0なら誤りなし（もしくは検出できない）．
-    // weightの計算が少し重いのでここで返してしまう．
-    if s == 0 {
-        return Some(r);
-    }
-
+    // シンドロームが0の場合は，誤りなしもしくは検出できない状態．
+    let s = mul_vec_mat(r, &H_T);
     if weight(s) <= 3 {
         return Some(r ^ s);
-    } else {
-        for (i, h_t_line) in H_T.iter().take(12).enumerate() {
-            let tmp = s ^ *h_t_line;
-            if weight(tmp) <= 2 {
-                let e = (0x800000 >> i) | tmp;
-                //let e = G[i] ^ s;  // こう書いても同じ
-                return Some(r ^ e);
-            }
+    }
+    for (i, h_t_line) in H_T.iter().take(12).enumerate() {
+        let tmp = s ^ *h_t_line;
+        if weight(tmp) <= 2 {
+            let e = (0x800000 >> i) | tmp;
+            //let e = G[i] ^ s;  // こう書いても同じ
+            return Some(r ^ e);
         }
     }
 
     // 2つめのシンドローム
-    let mut sh = 0;
-    for (i, h_t_line) in H_T.iter().take(12).enumerate() {
-        let s_bit = ((s >> (11 - i)) & 1) * 0xFFF;
-        sh ^= s_bit & *h_t_line;
-    }
+    let sh = mul_vec_mat(s, &H_T[..12]);
     if weight(sh) <= 3 {
         return Some(r ^ (sh << 12));
-    } else {
-        for (i, h_t_line) in H_T.iter().take(12).enumerate() {
-            let tmp = sh ^ *h_t_line;
-            if weight(tmp) <= 2 {
-                let e = (tmp << 12) | (0x800 >> i);
-                return Some(r ^ e);
-            }
+    }
+    for (i, h_t_line) in H_T.iter().take(12).enumerate() {
+        let tmp = sh ^ *h_t_line;
+        if weight(tmp) <= 2 {
+            let e = (tmp << 12) | (0x800 >> i);
+            return Some(r ^ e);
         }
     }
 
     None  // 4bitエラー
 }
 
-/// 符合語からデータを取り出す．
+/// 受信データからデータを取り出す．
 /// 
+/// `ecc`で誤り訂正してから，12bitのデータを取り出す．
+/// 4bitの誤りを検出した場合は`None`を返す．
+///
 /// 返り値のデータは下位12bitに入っている．
 /// 上位4bitは必ず0．
 #[inline]
-pub fn decode(code: u32) -> u16 {
+pub fn decode(code: u32) -> Option<u16> {
     // 生成行列からわかるように，元データは上位12bitに入っている．
-    ((code >> 12) & 0xFFF) as u16
+    ecc(code).map(|t| ((t >> 12) & 0xFFF) as u16)
 }
 
 /// シンドロームの重みを計算する（1になっているビットを数える）．
 #[inline]
 fn weight(s: u32) -> u32 {
     s.count_ones()
+}
+
+/// 行ベクトル`v`と行列`m`の積を計算する（加算はXOR）．
+///
+/// `v`は下位`m.len()`bitを使い，最上位のビットが`m`の0行目に対応する．
+/// ビット演算で処理するために，`v`のビットが1である行をXORで足し合わせている．
+#[inline]
+fn mul_vec_mat(v: u32, m: &[u32]) -> u32 {
+    let n = m.len();
+    let mut acc = 0;
+    for (i, line) in m.iter().enumerate() {
+        // 左のビットから順に見ていって，そのビットが1なら全ビット1にしたbit_maskを作る．
+        // 0u32からwrapping_subで-1すると0xFFFF_FFFFになることを利用している．
+        let bit_mask = 0u32.wrapping_sub((v >> (n - 1 - i)) & 1);
+        acc ^= bit_mask & *line;
+    }
+    acc
 }
 
 #[test]
@@ -159,15 +155,15 @@ fn test() {
                     // errorでビット反転させる．
                     let rx = encoded ^ error;
 
-                    // エラー検出&訂正
-                    let corrected = ecc(rx);
+                    // エラー検出&訂正してデータを取り出す
+                    let decoded = decode(rx);
                     
                     // エラービットが4bit未満なら全て訂正可能
                     let error_bits = error.count_ones();
                     if error_bits < 4 {
-                        assert_eq!(tx, decode(corrected.unwrap()));
+                        assert_eq!(Some(tx), decoded);
                     } else if error_bits == 4 {
-                        assert_eq!(None, corrected);
+                        assert_eq!(None, decoded);
                     }
                 }
             }
