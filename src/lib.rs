@@ -126,31 +126,36 @@ fn mul_vec_mat(v: u32, m: &[u32]) -> u32 {
     acc
 }
 
-#[test]
-fn test() {
-    let tx = 0b100110001101;  // 任意のデータ（12bit）
-    let encoded = encode(tx);
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    // 全パターンチェック
-    for i in 0..24 {
-        for j in 0..24 {
-            for k in 0..24 {
-                for l in 0..24 {                
-                    // エラービット
-                    let error = (1 << i) | (1 << j) | (1 << k) | (1 << l);
+    #[test]
+    fn test() {
+        let tx = 0b100110001101;  // 任意のデータ（12bit）
+        let encoded = encode(tx);
 
-                    // errorでビット反転させる．
-                    let rx = encoded ^ error;
+        // 全パターンチェック
+        for i in 0..24 {
+            for j in 0..24 {
+                for k in 0..24 {
+                    for l in 0..24 {                
+                        // エラービット
+                        let error = (1 << i) | (1 << j) | (1 << k) | (1 << l);
 
-                    // エラー検出&訂正してデータを取り出す
-                    let decoded = decode(rx);
+                        // errorでビット反転させる．
+                        let rx = encoded ^ error;
+
+                        // エラー検出&訂正してデータを取り出す
+                        let decoded = decode(rx);
                     
-                    // エラービットが4bit未満なら全て訂正可能
-                    let error_bits = error.count_ones();
-                    if error_bits < 4 {
-                        assert_eq!(Some(tx), decoded);
-                    } else if error_bits == 4 {
-                        assert_eq!(None, decoded);
+                        // エラービットが4bit未満なら全て訂正可能
+                        let error_bits = error.count_ones();
+                        if error_bits < 4 {
+                            assert_eq!(Some(tx), decoded);
+                        } else if error_bits == 4 {
+                            assert_eq!(None, decoded);
+                        }
                     }
                 }
             }
