@@ -1,6 +1,30 @@
-//! 拡張２元ゴレイ符号を実装
+//! Extended binary Golay code [24, 12, 8].
 //!
-//! 3bitまでのエラー訂正と4bitまでの誤り検出が可能．
+//! Each 12-bit data word is encoded into a 24-bit codeword.
+//! Since the minimum distance is 8, any error of up to 3 bits can be corrected
+//! and any 4-bit error can be detected.
+//!
+//! The code is systematic: the upper 12 bits of a codeword are the data itself
+//! and the lower 12 bits are parity bits.
+//!
+//! This crate is `no_std` and does not allocate.
+//!
+//! # Example
+//!
+//! ```
+//! let data: u16 = 0b0010_0111_0011;  // original data (12 bits)
+//! let tx: u32 = golay_code::encode(data);  // encode into a 24-bit codeword
+//!
+//! let e  = 0b0000_0001_0000_0000_1000_0100;  // 3-bit error
+//! let rx = tx ^ e;  // received word with some bits flipped
+//!
+//! // error detection & correction (when you need the corrected codeword)
+//! let corrected: Option<u32> = golay_code::ecc(rx);
+//! assert_eq!(Some(tx), corrected);
+//!
+//! // correct errors and extract the 12-bit data
+//! assert_eq!(Some(data), golay_code::decode(rx));
+//! ```
 
 
 // 生成行列`G` (12bit × 24bit) と検査行列の転置`H_T` (24bit × 12bit) は，
@@ -17,7 +41,9 @@
 
 #![no_std]
 
-/// 生成行列の右半分（検査行列の転置の上半分）(12bit × 12bit)
+/// The 12 × 12 matrix `B`, where `G = [I | B]` and `transpose(H) = [B; I]`.
+///
+/// Each element is one row, with column 0 at the most significant of the 12 bits.
 const B: [u32; 12] = [
     0b100111110001,
     0b010011111010,
@@ -33,12 +59,12 @@ const B: [u32; 12] = [
     0b101010101011,
 ];
 
-/// 12bitのデータを24bitの符号語に変換する．
-/// 
-/// データは下位12bitに入れておく．
-/// 上位4bitは見ないので何でも良い．
-/// 
-/// 変換後の符号語は下位24bitに入っている．
+/// Encodes 12-bit data into a 24-bit codeword.
+///
+/// Only the lower 12 bits of `a` are used; the upper 4 bits are ignored.
+///
+/// The codeword occupies the lower 24 bits of the return value
+/// (data in bits 23..12, parity in bits 11..0), and the upper 8 bits are 0.
 #[inline]
 pub fn encode(a: u16) -> u32 {
     // 符号語の上位12bitはデータそのもので，下位12bitがパリティ（データ × B）．
@@ -46,14 +72,14 @@ pub fn encode(a: u16) -> u32 {
     (a << 12) | mul_vec_mat(a, &B)
 }
 
-/// 受信語のエラー検出と訂正を行う．
-/// 
-/// 受信語`r`は下位24bitに入れておく．上位8bitは無視する．
+/// Detects and corrects errors in a received word, returning the corrected codeword.
 ///
-/// 3bitまでの誤りは訂正して，訂正後の符号語を`Some`で返す（上位8bitは0）．
-/// 4bitの誤りを検出した場合は`None`を返す．
+/// Only the lower 24 bits of `r` are used; the upper 8 bits are ignored.
 ///
-/// 5bit以上の誤りでは`Some`を返す場合もあるが，正しく訂正できているわけではない．
+/// * Up to 3 bit errors: returns `Some` with the corrected codeword (upper 8 bits are 0).
+/// * Exactly 4 bit errors: returns `None`.
+/// * 5 or more bit errors: the result is unreliable. It may be `None`,
+///   or `Some` with a wrong codeword (miscorrection).
 #[inline]
 pub fn ecc(r: u32) -> Option<u32> {
     // ゴレイ符号に関係無い部分は消す．
@@ -87,32 +113,29 @@ pub fn ecc(r: u32) -> Option<u32> {
         }
     }
 
-    None  // 4bitエラー
+    None  // 4bit error
 }
 
-/// 受信データからデータを取り出す．
-/// 
-/// `ecc`で誤り訂正してから，12bitのデータを取り出す．
-/// 4bitの誤りを検出した場合は`None`を返す．
+/// Corrects errors in a received word with [`ecc`] and returns the 12-bit data.
 ///
-/// 返り値のデータは下位12bitに入っている．
-/// 上位4bitは必ず0．
+/// The data is returned in the lower 12 bits, and the upper 4 bits are 0.
+/// Returns `None` whenever [`ecc`] does, so the same caveats apply to 5 or more bit errors.
 #[inline]
 pub fn decode(code: u32) -> Option<u16> {
     // 生成行列からわかるように，元データは上位12bitに入っている．
     ecc(code).map(|t| ((t >> 12) & 0xFFF) as u16)
 }
 
-/// シンドロームの重みを計算する（1になっているビットを数える）．
+/// Returns the Hamming weight (the number of 1 bits) of a syndrome.
 #[inline]
 fn weight(s: u32) -> u32 {
     s.count_ones()
 }
 
-/// 行ベクトル`v`と行列`m`の積を計算する（加算はXOR）．
+/// Multiplies the row vector `v` by the matrix `m` over GF(2).
 ///
-/// `v`は下位`m.len()`bitを使い，最上位のビットが`m`の0行目に対応する．
-/// ビット演算で処理するために，`v`のビットが1である行をXORで足し合わせている．
+/// `v` has `m.len()` bits, with its most significant bit corresponding to row 0 of `m`.
+/// The result is the XOR of the rows of `m` whose corresponding bit in `v` is 1.
 #[inline]
 fn mul_vec_mat(v: u32, m: &[u32]) -> u32 {
     let n = m.len();
