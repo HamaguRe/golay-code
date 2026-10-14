@@ -3,13 +3,15 @@
 An implementation of the extended binary Golay code (24, 12).
 It encodes 12-bit data into a 24-bit codeword, which can correct up to 3-bit errors and detect 4-bit errors.
 
+![golay-code](./figure.png)
+
 ## Example of use
 
 Cargo.toml
 
 ```toml
 [dependencies]
-golay-code = {git = "https://github.com/HamaguRe/golay-code"}
+golay-code = "0.1"
 ```
 
 src/main.rs

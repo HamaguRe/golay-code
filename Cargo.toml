@@ -1,10 +1,12 @@
 [package]
 name = "golay-code"
-version = "0.2.0"
+version = "0.1.0"
 license = "MIT"
 authors = ["HamaguRe <hamagure@space-denpa.jp>"]
 edition = "2021"
 description = "Extended binary Golay code (24, 12) encoder/decoder"
 repository = "https://github.com/HamaguRe/golay-code"
+keywords = ["golay", "ecc", "error-correction", "fec"]
+categories = ["encoding", "algorithms", "no-std", "no-std::no-alloc"]
 
 [dependencies]
