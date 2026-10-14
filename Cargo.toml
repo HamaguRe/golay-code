@@ -2,7 +2,7 @@
 name = "golay-code"
 version = "0.2.0"
 license = "MIT"
-authors = ["HamaguRe<space-denpa.jp>"]
+authors = ["HamaguRe <hamagure@space-denpa.jp>"]
 edition = "2021"
 description = "Extended binary Golay code (24, 12) encoder/decoder"
 repository = "https://github.com/HamaguRe/golay-code"
