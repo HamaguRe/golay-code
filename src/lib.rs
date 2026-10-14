@@ -1,8 +1,7 @@
-//! Extended binary Golay code [24, 12, 8].
+//! Extended binary Golay code (24, 12).
 //!
 //! Each 12-bit data word is encoded into a 24-bit codeword.
-//! Since the minimum distance is 8, any error of up to 3 bits can be corrected
-//! and any 4-bit error can be detected.
+//! Any error of up to 3 bits can be corrected, and any 4-bit error can be detected.
 //!
 //! The code is systematic: the upper 12 bits of a codeword are the data itself
 //! and the lower 12 bits are parity bits.
